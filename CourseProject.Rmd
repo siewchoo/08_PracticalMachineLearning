@@ -1,0 +1,296 @@
+---
+title: "Prediction Models for Weight Lifting Exercise"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+## Housekeep and load required libraries and functions.
+rm(list=ls())
+library(caret)
+library(randomForest)
+library(rattle)
+
+## Function provided to help split up the model predictions into separate files for submission.
+## usage: pml_write_files(answers)
+pml_write_files = function(x) {
+    n = length(x)
+    for(i in 1:n) {
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+    }
+}
+```
+
+## Introduction
+In the big push for context-aware Healthcare systems to help users stay healthy, manage their illness and support independent living, one of the areas heavily investigated is Human Actvity Recognition. Besides, enabling accurate identification of the activity performed, perhaps just as important is the ability to tell whether the activity was performed correctly.  
+  
+In their paper [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) by Eduardo Velloso et el., it was stated that at least 16% of all deaths could be avoided by improving one's cardio-respiratory fitness. An effective way of  doing so was regular muscle strengthening exercises, however, proper technique was paramount. Faulty execution led not only to missing the goal of building fitness but can also cause training injuries.  
+  
+For this project, we aim to build on the [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) datasets provided by Velloso et el. to create a model that will predict for any given user, his next performance of the Unilateral Dumbbell Biceps Curl. Potential application for our final model can include incorporation into a context-aware electronic personal coach or physiotherapist system that will sound premptive warning of possible injuries, suggestions for pose correction, etc.  
+
+A brief of the experiment:  
+  
+- Exercises were performed by six male participants aged between 20-28 years with little weight lifting experience.
+- Each participant
+    - performed one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl
+    - in sliding windows of 0.5 second to 2.5 seconds
+    - wearing three on-body wearable devices [belt, armband and glove] and interacting with a sensor-mounted 1.25kg dumbbell. 
+  
+  
+## Dataset Loading and Surveyance
+The training data for this project are downloadable at:   
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here:   
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+  
+Based on information laid out in the paper and an initial survey of the training (ie. pml-training.csv) and test (ie. pml-testing.csv) data using Microsoft Office Excel, it was revealed that there are  
+  
+- 19622 rows and 20 rows for the training and test data respectively
+- 160 columns for both training and test data
+    - 7 identification variables
+    - 56 raw sensor reading variables
+    - 96 derived sensor variables
+    - 1 outcome variable
+   
+(Refer to assembled [codebook](Codebook.html) for more information.)
+   
+  
+A couple of things were noted when checking out the training data:
+  
+1) NA values were denoted with "NA" and "#DIV/0!" strings.
+2) A large proportion of the data had NAs.
+3) There appears to be a redundant variable; there is skewness_roll_belt.1 and skewness_roll_belt.
+4) Some variables with "pitch" in their names were misspelt, eg. 
+    - kurtosis_picth_belt, max_picth_belt, 
+    - kurtosis_picth_arm, max_picth_arm, 
+    - kurtosis_picth_dumbbell, max_picth_dumbbell,
+    - kurtosis_picth_forearm, max_picth_forearm
+ 
+  
+##2. Data Cleaning  
+To clean up the data, we converted the "NA" and "#DIV/0!" strings to R's missing value indicator at loading. However, we will not be removing the missing data or extraneous column just yet, until we can determine the extent and the nature of the data. The misspelt variable names will also be left as it is to preserve integrity.  
+  
+```{r}
+## Given that the file is fairly large, check that the data has not already been loaded before reading it in.
+if (!exists("training")) {
+    training <- read.table("pml-training.csv", 
+                           sep = ",", 
+                           header = TRUE, 
+                           stringsAsFactors = FALSE, 
+                           na.strings=c("NA", "#DIV/0!"))
+    
+    ## Converting the classe variable (our outcome) to a factor variable.
+    training$classe <- factor(training$classe)
+}
+
+if (!exists("testing")) {
+    testing <- read.table("pml-testing.csv", 
+                          sep = ",", 
+                          header = TRUE, 
+                          stringsAsFactors = FALSE, 
+                          na.strings=c("NA", "#DIV/0!"))
+}
+```
+  
+  
+##3. Exploratory Data Analysis
+An initial scope of the training data gave the impression that it has large swatches of NAs, possibly with entire rows or columns that have only NA values. Possible courses of action include:
+  
+- removing NA-only rows
+- excluding NA-only columns
+- imputing NA values with preProcess(.., method="knnImpute") 
+- standardizing NA values with BoxCox transformations using preProcess(.., method=c("BoxCox")).
+   
+However, to pick the most appropriate option requires us to know the extent of the missingness.
+
+```{r}
+## Check if there are observations that do not have NA values.
+completeCasesCount <- sum(complete.cases(training))
+completeCasesCount
+
+## Check if there are observations that are entirely NAs for the sensor reading columns.
+naRows <- which(rowSums(is.na(training[, -c(1:7, 160)])) == 152)
+naRows
+
+## Generate a table listing the number of columns with various percentages of NA.
+nobs <- nrow(training)
+naPercentageTally <- apply(training, 2, function(col) round(sum(is.na(col))/nobs, 2))
+table(naPercentageTally)
+```
+  
+As shown, 6 columns are entirely NAs, 94 columns are 98% NAs and just 60 are properly filled with data. But a quick scan tells us that columns that are either entirely or almost entirely NAs are the derived sensor variables. Imputation and transformations are not required since these are possibly aggregate values calculated for an associated sliding time window.  
+   
+In this case, we should be able to exclude these variables and rely on our raw sensor data for building our model. This, in my opinion, would be a cleaner way to build our model since the raw sensor readings and the derived values are most certainly highly correlated. However, there are serious misgiving building a model with less than half the feature set and we should monitor for abnormalities.  
+   
+   
+##4. Feature Selection
+Therefore, the pertinent features for our model can be narrowed down by:  
+1) Removing irrelevant columns in the form of user- and time-related variables. This stamps from the assumption that our prediction model will be incorporated into an exercise feedback system. Such systems are unlikely to be user or time specific, thus the exclusion.  
+     
+2) Removing columns that are entirely or almost entirely NAs.  
+  
+3) Removing zero covariates, if any.
+  
+```{r}
+## Remove the user and time related variables,
+training <- training[, -c(1:7)]
+dim(training)
+
+## Remove columns that are more than 95% NAs.
+nearlyEmptyCols <- which(apply(training, 2, function(col) sum(is.na(col))/nrow(training) > 0.95))
+training <- training[, -nearlyEmptyCols]
+dim(training)
+
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+nzv
+```
+  
+Since the nearZeroVar() test did not throw up any zero variance predictors, we ultimately end up with datasets with 53 columns each.
+  
+  
+##5. Cross Validation
+To facilitate cross validation, we will be splitting our training data further into 3 subsets:
+- training (60%)
+- testing (20%)
+- validation (20%)
+   
+The testing data will be held out for testing with our final model.
+   
+```{r}
+set.seed(2015)
+## Split the training dataset into training(60%), test(20%) and validation(20%) sets. 
+trainIdx <- createDataPartition(training$classe, p=0.6, list=FALSE)
+training.train <- training[trainIdx, ]              ## 60% of training data 
+
+training.test <- training[-trainIdx, ]              ## 40% of training data
+## Again split the 40% dataset into halves.
+testIdx <- createDataPartition(training.test$classe, p=0.5, list=FALSE)
+training.validate <- training.test[-testIdx, ]      ## 20% 
+training.test <- training.test[testIdx, ]           ## 20% 
+
+dim(training.train); dim(training.test); dim(training.validate)
+```
+
+##6. Model Building
+The options available to us are: random forests, rpart, bagging, boosting, linear model, general linear model and Naive Bayes. However, given the nonlinear nature of the data, I have elected to use rpart and random forests. The former choice was chosen to enable a quick graphical look at how the variables are related as well as generate a list of important variables. A further attempt at boosting with the caret package was abandoned after several tries as the program never seemed to complete.  
+  
+  
+###6.1 Building a Decision Tree Model
+```{r, message=FALSE, warning=FALSE}
+set.seed(2015)
+ctrl <- trainControl(method = "cv", number=5)
+rpartModel <- train(classe ~ ., 
+                    data=training.train, 
+                    method="rpart", 
+                    trControl=ctrl)
+rpartModel
+modelVarImp <- varImp(rpartModel)
+modelVarImp
+```
+  
+In this first iteration of our classification decision tree model, accuracy is unsatisfactory at only about 51% after 5-fold cross validation. However, we have generated and identified a list of important variables (ie. importance > 0.00), which will hopefully lead to much better accuracy for our second iteration.  
+  
+```{r}
+## Build iteration 2 of the rpart model base on list of important variables identified.
+#formulaStr <- paste("classe ~", paste(rownames(modelVarImp$importance)[modelVarImp$importance > 0], collapse="+"))
+rpartModel <- train(classe ~ accel_arm_x + accel_belt_z + accel_dumbbell_y + magnet_arm_x + magnet_belt_y +
+                    magnet_dumbbell_y + magnet_dumbbell_z + pitch_forearm + roll_arm + roll_belt + roll_dumbbell +
+                    roll_forearm+total_accel_belt + yaw_belt, 
+                    data=training.train, 
+                    method="rpart", 
+                    trControl=ctrl)
+rpartModel
+fancyRpartPlot(rpartModel$finalModel)
+```
+  
+Removing variables that are of zero importance did improve the model's accuracy but only by a negligible 1%. It is also noted that there is no leaf for Class D in the RpartPlot both before and after removing variables with zero importance. This is going to pose a problem since an entire class is unrepresented in the decision tree. Nevertheless, out of curiosity, we will proceed to use the model to predict for observations in the test and validation subsets.  
+   
+```{r}
+## Predicting with test subset.
+modelPredictions <- predict(rpartModel, newdata=training.test)
+cmatrix <- confusionMatrix(training.test$classe, modelPredictions)
+cmatrix
+
+## Predicting with validation subset.
+modelPredictions <- predict(rpartModel, newdata=training.validate)
+cmatrix <- confusionMatrix(training.validate$classe, modelPredictions)
+cmatrix
+```
+  
+Unsurprising, accuracy for the test and validation subsets of the training data continues to hover around the 50% mark.  
+  
+  
+###6.2 Building a Random Forest Model
+Here, I use the better performing randomForest package to assemble my random forest model after hitting a stonewall with caret's random forest implementation. With an initial 10% of the training data, caret's version took nearly half an hour to complete and at 30%, the command did not complete even after 2 hours. By comparison, the randomForest package's implementation finished training for 60% of the training data in minutes. Cross validation was skipped since it was not required (read referenced write-up [here](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm)).  
+   
+```{r}
+rfModel <- randomForest(classe ~ ., data=training.train, importance=TRUE)
+rfModel
+varImpPlot(rfModel)
+``` 
+  
+Given the disappointing performance from the decision tree model, it was totally unexpected that the random forest model achieve a near-perfect average of 99.4% across all classes, with an OOB (out-of-bag) error estimate of 0.63%. Here I plot random forest's version of important variables. The MeanDecreaseAccuracy plot shows how much the model's performance is affected without a particular variable. Hence, for a very predictive variable, we would expect a high decrease in accuracy. The MeanDecreaseGini plot measures the purity of nodes at the end of the tree and a high score in this case means the variable is important (read referenced write-up [here](http://trevorstephens.com/post/73770963794/titanic-getting-started-with-r-part-5-random)).  
+  
+The model's performance with the training data's test and validation subsets continues to impress with accuracies in the 99%.  
+  
+```{r}
+## Predicting with test subset.
+modelPredictions <- predict(rfModel, newdata=training.test)
+cmatrix <- confusionMatrix(training.test$classe, modelPredictions)
+cmatrix
+
+## Predicting with validation subset.
+modelPredictions <- predict(rfModel, newdata=training.validate)
+cmatrix <- confusionMatrix(training.validate$classe, modelPredictions)
+cmatrix
+```
+  
+    
+##7. Predicting with Test Data
+It is without a doubt that the chosen prediction model for use with the test data would be the random forest model. However, we will still be predicting with the decision tree model to assess it's out of sample error rate.   
+
+```{r}
+## Generate predictions for the test dataset using the random forest model.
+rfModelPredictions <- predict(rfModel, newdata=testing)
+## The output files generated are used for the project's web submissions.
+pml_write_files(rfModelPredictions)
+
+## Generate predictions for the test dataset using the decision tree model.
+rpartModelPredictions <- predict(rpartModel, newdata=testing)
+## Compute the confusion matrix for the predictions versus the outcome from the random forest model.
+confusionMatrix(rfModelPredictions, rpartModelPredictions)
+```
+  
+  
+##8. Measuring Error
+The following table list the performance of our 2 models. The numbers for the testing dataset was computed by hand based on the outcome of the project's web submissions using the random forest model's predictions.
+  
+RPart Model:  
+
+Iteration | Remarks                      | Accuracy(%) | In Sample Error | Out of Sample Error |
+--------- | ---------------------------- | ----------- | --------------- | --------------------|
+1         | training.train (53 features) | 50.4%       | 49.6%           | Not applicable      |
+2         | training.train (14 features) | 51.4%       | 48.6%           | .                   |
+2         | training.test                | 49.6%       | 50.4%           | .                   |
+2         | training.validate            | 48.5%       | 51.5%           | .                   |
+2         | testing                      | 40%         | Not applicable  | 60%                 |
+
+  
+Random Forest Model:  
+
+Iteration | Remarks                      | Accuracy(%) | In Sample Error | Out of Sample Error |
+--------- | ---------------------------- | ----------- | --------------- | --------------------|
+1         | training.train (53 features) | 99.4%       | 0.6%            | Not applicable      |
+1         | training.test                | 99.3%       | 0.7%            | .                   |
+1         | training.validate            | 99.4%       | 0.6%            | .                   |
+1         | testing                      | 100%        | Not applicable  | 0%                  |
+
+  
+##Conclusion
+Given that we are using like data to predict like, I was expecting a fairly high level of accuracy. Thus, the decision tree's poor showing was unexpected with accuracies in the 48-51% region, even after incorporating a 5-fold preprocessing. The random forest model is the polar opposite, hitting near-perfect accuracies.  
+  
+With more time, an interesting exploration would be to do feature selection using the important variables identified by the random forest model to build the decision tree model to see if its accuracy would improve. Also worth exploring is the implementation of boosting to see how well it fares compared to the random tree model as it is the other algorithm that cames highly recommended in the lectures.
+  

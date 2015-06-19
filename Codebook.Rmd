@@ -1,0 +1,55 @@
+---
+title: "Codebook"
+output: html_document
+---
+
+Data description for the training and test data files can be given as:  
+  
+  
+Column    | Type      | Description                                                                                                   |
+--------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+1         | numeric   | Running record count                                                                                          |
+2         | character | Subject name                                                                                                  |
+3 - 5     | numeric   | Timestamps                                                                                                    |
+6 - 7     | numeric   | Sliding time window                                                                                           |
+8  - 43   | numeric   | Belt sensor readings                                                                                          |
+.         | .         | * Raw sensor readings (14)                                                                                    |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- Accelerometer (accel_belt_[x|y|z])                                                  |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- Gyroscope (gyros_belt_[x|y|z])                                                      |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- Magnetometer (magnet_belt_[x|y|z])                                                  |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- overall ([roll,pitch,yaw]\_belt), total_accel_belt, var_total_accel_belt            |
+.         | .         | * Derived readings (24)                                                                                       |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- mean (avg_[roll|pitch|yaw]\_belt)                                                   |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- variance (var_[roll|pitch|yaw]\_belt)                                               |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- standard deviation (stddev_[roll|pitch|yaw]\_belt)                                  |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- max (max_[roll|pitch|yaw]\_belt)                                                    |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- min (min_[roll|pitch|yaw]\_belt)                                                    |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- amplitude (amplitude_[roll|pitch|yaw]\_belt)                                        |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- kurtosis (kurtosis_[roll|pitch|yaw]\_belt)                                          |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- skewness (skewness_[roll|pitch|yaw]\_belt)                                          |
+44 - 79   | numeric   | Armband sensor readings                                                                                       |
+.         | .         | * Raw sensor readings (14)                                                                                    | 
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;9 raw sensor readings from accelerometer, gyroscope and magnetometer                  |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;See raw sensor reading variable names for belt. Note: "belt" is replaced with "arm".  |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;- overall ([roll|pitch|yaw]\_arm), total_accel_arm, var_accel_arm                     |
+.         | .         | * Derived readings (24)                                                                                       |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Refer to derived reading variable names for belt.                                     |                              
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Note: "belt" is replaced with "arm". Eg. mean [avg_[roll|pitch|yaw]\_arm]             |
+80 - 115  | numeric   | Dumbbell sensor readings                                                                                      |
+.         | .         | * Raw sensor readings (14)                                                                                    | 
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Refer to armband raw sensor readings. Note: "arm" is replaced with "dumbbell".        |                  
+.         | .         | * Derived readings (24)                                                                                       |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Refer to derived reading variable names for belt.                                     |                              
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Note: "belt" is replaced with "dumbbell". Eg. mean (avg_[roll|pitch|yaw]\_dumbbell)   |
+116 - 152 | numeric   | Glove sensor readings                                                                                         |
+.         | .         | * Raw sensor readings (14)                                                                                    |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Refer to armband raw sensor readings. Note: "arm" is replaced with "forearm".         |                  
+.         | .         | * Derived readings (24)                                                                                       |
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Refer to derived reading variable names for belt.                                     |                              
+.         | .         | &nbsp;&nbsp;&nbsp;&nbsp;Note: "belt" is replaced with "forearm". Eg. mean (avg_[roll|pitch|yaw]\_forearm)     |
+153       | factor    | Assessment indicators {A, B, C, D, E}                                                                         |
+.         | .         | A: Correct execution of the exercise                                                                          |             
+.         | .         | B: Throw elbows to the front - incorrect                                                                      |
+.         | .         | C: Lift dumbell only halfway - inorrect                                                                       |
+.         | .         | D: Lower dumbbell only halfway - incorrect                                                                    |
+.         | .         | E: Throw hips to the front - incorrect                                                                        |
